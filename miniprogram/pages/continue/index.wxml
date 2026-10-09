@@ -1,3 +1,15 @@
 <view class="body">
   <view wx:if="{{empty}}" class="card">{{copy}}</view>
+  <view
+    wx:for="{{episodes}}"
+    wx:key="episodeId"
+    class="row"
+    data-episode-id="{{item.episodeId}}"
+    bindtap="openEpisode"
+  >
+    <view class="row-main">
+      <view class="title">{{item.title}}</view>
+      <view wx:if="{{item.lastPlayedDate}}" class="muted">{{item.lastPlayedDate}}</view>
+    </view>
+  </view>
 </view>

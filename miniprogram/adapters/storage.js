@@ -1,5 +1,6 @@
 const MANIFEST_URL_KEY = "manifestUrl";
 const LAST_MANIFEST_KEY = "lastManifest";
+const WATCH_PROGRESS_KEY = "watchProgress";
 
 function createWxStorage() {
   return {
@@ -29,6 +30,21 @@ function createWxStorage() {
       } else {
         wx.setStorageSync(LAST_MANIFEST_KEY, body);
       }
+      return Promise.resolve();
+    },
+    getWatchProgress() {
+      try {
+        const value = wx.getStorageSync(WATCH_PROGRESS_KEY);
+        if (value == null || typeof value !== "object" || Array.isArray(value)) {
+          return Promise.resolve({});
+        }
+        return Promise.resolve(value);
+      } catch (_err) {
+        return Promise.resolve({});
+      }
+    },
+    setWatchProgress(all) {
+      wx.setStorageSync(WATCH_PROGRESS_KEY, all || {});
       return Promise.resolve();
     },
   };

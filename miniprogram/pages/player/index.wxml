@@ -5,12 +5,16 @@
     src="{{source}}"
     title="{{title}}"
     playback-rate="{{playbackRate}}"
+    initial-time="{{positionSeconds}}"
     object-fit="contain"
     controls
     show-center-play-btn
     show-play-btn
     show-background-playback-button="{{false}}"
     enable-play-gesture
+    bindplay="onPlay"
+    bindtimeupdate="onTimeUpdate"
+    bindended="onEnded"
   />
   <view class="speeds">
     <view

@@ -94,3 +94,14 @@ page {
   padding: 28rpx 32rpx;
   border-bottom: 1rpx solid #f0f0f0;
 }
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.check {
+  color: #07c160;
+  font-size: 36rpx;
+  margin-left: 16rpx;
+}

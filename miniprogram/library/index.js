@@ -39,10 +39,30 @@ function episodesFromManifest(body) {
   return episodesByShow;
 }
 
-function createLibrary({ storage, http, video }) {
+function createLibrary({ storage, http, video, clock }) {
   let episodesByShow = {};
   let fetchedManifest = false;
   let playbackRate = 1;
+
+  async function loadWatchProgress() {
+    if (!storage.getWatchProgress) {
+      return {};
+    }
+    return (await storage.getWatchProgress()) || {};
+  }
+
+  async function saveWatchProgress(all) {
+    if (storage.setWatchProgress) {
+      await storage.setWatchProgress(all);
+    }
+  }
+
+  function nowIso() {
+    if (clock && clock.now) {
+      return clock.now();
+    }
+    return new Date().toISOString();
+  }
 
   function applyManifest(body) {
     fetchedManifest = true;
@@ -139,17 +159,65 @@ function createLibrary({ storage, http, video }) {
         await this.refresh();
       }
       const show = SHOWS[showKey];
+      const all = await loadWatchProgress();
       return {
         title: show ? show.title : "",
-        episodes: episodesByShow[showKey] || [],
+        episodes: (episodesByShow[showKey] || []).map((episode) => {
+          const progress = all[episode.episodeId];
+          return {
+            ...episode,
+            completed: Boolean(progress && progress.completed),
+            lastPlayedAt: progress ? progress.lastPlayedAt || null : null,
+          };
+        }),
       };
     },
 
     async viewInProgress() {
+      if (!fetchedManifest) {
+        await this.refresh();
+      }
+      const all = await loadWatchProgress();
+      const episodes = [];
+      Object.keys(all).forEach((episodeId) => {
+        const progress = all[episodeId];
+        if (
+          !(progress && progress.completed !== true && progress.positionSeconds > 0)
+        ) {
+          return;
+        }
+        let episode = null;
+        Object.keys(SHOWS).forEach((showKey) => {
+          if (episode) {
+            return;
+          }
+          episode = (episodesByShow[showKey] || []).find(
+            (item) => item.episodeId === episodeId,
+          );
+        });
+        if (!episode) {
+          return;
+        }
+        episodes.push({
+          episodeId: episode.episodeId,
+          title: episode.title,
+          lastPlayedAt: progress.lastPlayedAt || null,
+        });
+      });
+      episodes.sort((a, b) =>
+        String(b.lastPlayedAt || "").localeCompare(String(a.lastPlayedAt || "")),
+      );
+      if (episodes.length === 0) {
+        return {
+          empty: true,
+          episodes: [],
+          copy: "还没有看到一半的 Episode。",
+        };
+      }
       return {
-        empty: true,
-        episodes: [],
-        copy: "还没有看到一半的 Episode。",
+        empty: false,
+        episodes,
+        copy: null,
       };
     },
 
@@ -168,6 +236,9 @@ function createLibrary({ storage, http, video }) {
       });
       const source = episode ? episode.source : "";
       playbackRate = 1;
+      const progress = (await loadWatchProgress())[episodeId];
+      const positionSeconds =
+        !progress || progress.completed ? 0 : progress.positionSeconds;
       if (video && video.load) {
         await video.load(source);
       }
@@ -179,7 +250,40 @@ function createLibrary({ storage, http, video }) {
         source,
         playbackRate,
         rates: PLAYBACK_RATES,
+        positionSeconds,
       };
+    },
+
+    async playEpisode(episodeId) {
+      const all = { ...(await loadWatchProgress()) };
+      const previous = all[episodeId] || {};
+      all[episodeId] = {
+        ...previous,
+        positionSeconds: previous.positionSeconds || 0,
+        completed: Boolean(previous.completed),
+        lastPlayedAt: nowIso(),
+      };
+      await saveWatchProgress(all);
+    },
+
+    async leaveEpisode(episodeId, { positionSeconds, durationSeconds } = {}) {
+      const all = { ...(await loadWatchProgress()) };
+      const previous = all[episodeId];
+      let completed = Boolean(previous && previous.completed);
+      if (durationSeconds != null && durationSeconds > 0) {
+        if (durationSeconds - positionSeconds < 5) {
+          completed = true;
+        } else if (positionSeconds > 0) {
+          completed = false;
+        }
+      }
+      all[episodeId] = {
+        ...(previous || {}),
+        positionSeconds,
+        completed,
+        lastPlayedAt: nowIso(),
+      };
+      await saveWatchProgress(all);
     },
 
     async setPlaybackRate(rate) {

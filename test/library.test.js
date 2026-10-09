@@ -5,6 +5,7 @@ const { createLibrary } = require("../miniprogram/library");
 function memoryStorage(initialManifestUrl = "") {
   let manifestUrl = initialManifestUrl;
   let lastManifest = null;
+  let watchProgress = {};
   return {
     async getManifestUrl() {
       return manifestUrl;
@@ -17,6 +18,12 @@ function memoryStorage(initialManifestUrl = "") {
     },
     async setLastManifest(body) {
       lastManifest = body;
+    },
+    async getWatchProgress() {
+      return watchProgress;
+    },
+    async setWatchProgress(next) {
+      watchProgress = next;
     },
   };
 }
@@ -664,5 +671,373 @@ describe("Library", () => {
     const view = await library.viewEpisode("friends-s01e01");
 
     assert.equal(view.title, "The One Where Monica Gets a Roommate");
+  });
+
+  it("leaving the player writes WatchProgress so resume uses positionSeconds", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.viewEpisode("yakka-dee-apple");
+
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    const view = await library.viewEpisode("yakka-dee-apple");
+    assert.equal(view.positionSeconds, 42);
+  });
+
+  it("WatchProgress persists on this install keyed by EpisodeId", async () => {
+    const storage = memoryStorage();
+    const http = memoryHttp({
+      "yakka-dee": [
+        {
+          episodeId: "yakka-dee-apple",
+          title: "Apple",
+          sortKey: "001",
+          source: "https://cdn.example/yakka-dee-apple.mp4",
+        },
+      ],
+    });
+    const library = createLibrary({ storage, http });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    const relaunched = createLibrary({ storage, http });
+    const view = await relaunched.viewEpisode("yakka-dee-apple");
+    assert.equal(view.positionSeconds, 42);
+  });
+
+  it("继续看 lists unfinished Episodes with positionSeconds greater than 0", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    const view = await library.viewInProgress();
+    assert.equal(view.empty, false);
+    assert.equal(view.episodes.length, 1);
+    assert.equal(view.episodes[0].episodeId, "yakka-dee-apple");
+    assert.equal(view.episodes[0].title, "Apple");
+  });
+
+  it("remaining under 5 seconds marks completed, keeps the row, and drops it from 继续看", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 116,
+      durationSeconds: 120,
+    });
+
+    const inProgress = await library.viewInProgress();
+    assert.equal(inProgress.empty, true);
+    assert.deepEqual(inProgress.episodes, []);
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].episodeId, "yakka-dee-apple");
+    assert.equal(show.episodes[0].completed, true);
+  });
+
+  it("a completed Episode opens at 0", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 118,
+      durationSeconds: 120,
+    });
+
+    const view = await library.viewEpisode("yakka-dee-apple");
+    assert.equal(view.positionSeconds, 0);
+  });
+
+  it("watching into the middle of a completed Episode returns it to 继续看", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 118,
+      durationSeconds: 120,
+    });
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 30,
+      durationSeconds: 120,
+    });
+
+    const inProgress = await library.viewInProgress();
+    assert.equal(inProgress.empty, false);
+    assert.equal(inProgress.episodes[0].episodeId, "yakka-dee-apple");
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].completed, false);
+
+    const view = await library.viewEpisode("yakka-dee-apple");
+    assert.equal(view.positionSeconds, 30);
+  });
+
+  it("play updates lastPlayedAt and does not store playback rate", async () => {
+    const storage = memoryStorage();
+    const http = memoryHttp({
+      "yakka-dee": [
+        {
+          episodeId: "yakka-dee-apple",
+          title: "Apple",
+          sortKey: "001",
+          source: "https://cdn.example/yakka-dee-apple.mp4",
+        },
+      ],
+    });
+    const library = createLibrary({
+      storage,
+      http,
+      clock: { now: () => "2026-03-15T08:00:00.000Z" },
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.viewEpisode("yakka-dee-apple");
+    await library.setPlaybackRate(1.5);
+    await library.playEpisode("yakka-dee-apple");
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].lastPlayedAt, "2026-03-15T08:00:00.000Z");
+
+    const relaunched = createLibrary({ storage, http });
+    const view = await relaunched.viewEpisode("yakka-dee-apple");
+    assert.equal(view.playbackRate, 1);
+  });
+
+  it("WatchProgress stays on EpisodeId when Source changes", async () => {
+    const http = memoryHttp({
+      "yakka-dee": [
+        {
+          episodeId: "yakka-dee-apple",
+          title: "Apple",
+          sortKey: "001",
+          source: "https://cdn.example/yakka-dee-apple-v1.mp4",
+        },
+      ],
+    });
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http,
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    http.setBody({
+      "yakka-dee": [
+        {
+          episodeId: "yakka-dee-apple",
+          title: "Apple",
+          sortKey: "001",
+          source: "https://cdn.example/yakka-dee-apple-v2.mp4",
+        },
+      ],
+    });
+    await library.refresh();
+
+    const view = await library.viewEpisode("yakka-dee-apple");
+    assert.equal(view.positionSeconds, 42);
+    assert.equal(view.source, "https://cdn.example/yakka-dee-apple-v2.mp4");
+  });
+
+  it("leaving the player writes lastPlayedAt on WatchProgress", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      clock: { now: () => "2026-04-01T12:00:00.000Z" },
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].lastPlayedAt, "2026-04-01T12:00:00.000Z");
+  });
+
+  it("继续看 lists in-progress Episodes most recently played first", async () => {
+    let now = "2026-03-15T08:00:00.000Z";
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+        friends: [
+          {
+            episodeId: "friends-s01e01",
+            title: "The One Where Monica Gets a Roommate",
+            sortKey: "S01E01",
+            source: "https://cdn.example/friends-s01e01.mp4",
+          },
+        ],
+      }),
+      clock: { now: () => now },
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 10,
+      durationSeconds: 120,
+    });
+    now = "2026-03-15T09:00:00.000Z";
+    await library.leaveEpisode("friends-s01e01", {
+      positionSeconds: 20,
+      durationSeconds: 1200,
+    });
+
+    const view = await library.viewInProgress();
+    assert.deepEqual(
+      view.episodes.map((episode) => episode.episodeId),
+      ["friends-s01e01", "yakka-dee-apple"],
+    );
+  });
+
+  it("leaving before duration is known does not mark the Episode completed", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 0,
+      durationSeconds: 0,
+    });
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].completed, false);
+    const inProgress = await library.viewInProgress();
+    assert.equal(inProgress.empty, true);
+  });
+
+  it("leaving a completed Episode at 0 keeps it completed", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 118,
+      durationSeconds: 120,
+    });
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 0,
+      durationSeconds: 120,
+    });
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].completed, true);
+    const inProgress = await library.viewInProgress();
+    assert.equal(inProgress.empty, true);
   });
 });
