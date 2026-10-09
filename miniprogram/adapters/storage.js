@@ -43,8 +43,8 @@ function createWxStorage() {
         return Promise.resolve({});
       }
     },
-    setWatchProgress(all) {
-      wx.setStorageSync(WATCH_PROGRESS_KEY, all || {});
+    setWatchProgress(watchProgressByEpisodeId) {
+      wx.setStorageSync(WATCH_PROGRESS_KEY, watchProgressByEpisodeId || {});
       return Promise.resolve();
     },
   };

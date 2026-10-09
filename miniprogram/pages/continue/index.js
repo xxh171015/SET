@@ -1,20 +1,14 @@
 const app = getApp();
-
-function formatLastPlayedAt(iso) {
-  if (!iso) {
-    return "";
-  }
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
+const {
+  formatLastPlayedAt,
+  formatProgress,
+} = require("../../formatLastPlayedAt.js");
 
 Page({
   data: {
     empty: true,
     copy: "",
+    actionLabel: "",
     episodes: [],
   },
 
@@ -23,12 +17,21 @@ Page({
     this.setData({
       empty: view.empty,
       copy: view.copy || "",
+      actionLabel: view.actionLabel || "",
       episodes: (view.episodes || []).map((episode) => ({
         episodeId: episode.episodeId,
         title: episode.title,
         lastPlayedDate: formatLastPlayedAt(episode.lastPlayedAt),
+        progressLabel: formatProgress(
+          episode.positionSeconds,
+          episode.durationSeconds,
+        ),
       })),
     });
+  },
+
+  goToLibrary() {
+    wx.switchTab({ url: "/pages/library/index" });
   },
 
   openEpisode(event) {

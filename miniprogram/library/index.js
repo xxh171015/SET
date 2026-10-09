@@ -1,4 +1,6 @@
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2];
+const SOURCE_FAIL_COPY = "无法播放。请检查 Source 地址。SET 不托管视频。";
+const SOURCE_FAIL_ACTION = "返回";
 
 const STAGES = [
   { stageId: "beginner", name: "初级", showKeys: ["yakka-dee", "cocomelon"] },
@@ -25,20 +27,69 @@ function isManifestBody(body) {
   return body != null && typeof body === "object" && !Array.isArray(body);
 }
 
+function episodeRow(episode, progress) {
+  const row = {
+    ...episode,
+    completed: Boolean(progress && progress.completed),
+    lastPlayedAt: progress ? progress.lastPlayedAt || null : null,
+  };
+  if (progress) {
+    row.positionSeconds = progress.positionSeconds;
+    if (progress.durationSeconds > 0) {
+      row.durationSeconds = progress.durationSeconds;
+    }
+  }
+  return row;
+}
+
+function findEpisodeById(episodesByShow, episodeId) {
+  const showKeys = Object.keys(SHOWS);
+  for (let i = 0; i < showKeys.length; i += 1) {
+    const episode = (episodesByShow[showKeys[i]] || []).find(
+      (item) => item.episodeId === episodeId,
+    );
+    if (episode) {
+      return episode;
+    }
+  }
+  return null;
+}
+
+function sourceFailView(episode, extras) {
+  return {
+    title: episode ? episode.title : "",
+    source: episode ? episode.source : "",
+    playbackRate: extras.playbackRate,
+    rates: PLAYBACK_RATES,
+    playbackFailed: true,
+    copy: SOURCE_FAIL_COPY,
+    actionLabel: SOURCE_FAIL_ACTION,
+    ...extras.fields,
+  };
+}
+
 function episodesFromManifest(body) {
+  const seenEpisodeIds = new Set();
   const episodesByShow = {};
   Object.keys(SHOWS).forEach((showKey) => {
     const raw = body && body[showKey];
-    episodesByShow[showKey] = Array.isArray(raw)
-      ? raw
-          .map((episode) => ({
-            episodeId: episode.episodeId,
-            title: episode.title,
-            sortKey: episode.sortKey,
-            source: episode.source,
-          }))
-          .sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)))
-      : [];
+    const episodes = [];
+    if (Array.isArray(raw)) {
+      raw.forEach((episode) => {
+        if (!episode || seenEpisodeIds.has(episode.episodeId)) {
+          return;
+        }
+        seenEpisodeIds.add(episode.episodeId);
+        episodes.push({
+          episodeId: episode.episodeId,
+          title: episode.title,
+          sortKey: episode.sortKey,
+          source: episode.source,
+        });
+      });
+      episodes.sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)));
+    }
+    episodesByShow[showKey] = episodes;
   });
   return episodesByShow;
 }
@@ -48,18 +99,15 @@ function createLibrary({ storage, http, video, clock }) {
   let fetchedManifest = false;
   let manifestStale = false;
   let playbackRate = 1;
+  const progressBeforePlay = new Map();
+  const playbackFailed = new Set();
 
   async function loadWatchProgress() {
-    if (!storage.getWatchProgress) {
-      return {};
-    }
     return (await storage.getWatchProgress()) || {};
   }
 
-  async function saveWatchProgress(all) {
-    if (storage.setWatchProgress) {
-      await storage.setWatchProgress(all);
-    }
+  async function saveWatchProgress(watchProgressByEpisodeId) {
+    await storage.setWatchProgress(watchProgressByEpisodeId);
   }
 
   function nowIso() {
@@ -107,7 +155,6 @@ function createLibrary({ storage, http, video, clock }) {
         episodes: [],
         primaryAction: null,
         actionLabel: null,
-        continueBanner: false,
         stages: STAGES.map((stage) => ({
           stageId: stage.stageId,
           name: stage.name,
@@ -122,11 +169,12 @@ function createLibrary({ storage, http, video, clock }) {
     },
 
     async saveManifestUrl(url) {
-      await storage.setManifestUrl(String(url ?? "").trim());
+      const manifestUrl = String(url ?? "").trim();
+      await storage.setManifestUrl(manifestUrl);
       fetchedManifest = false;
       manifestStale = false;
       episodesByShow = {};
-      if (storage.setLastManifest) {
+      if (!manifestUrl && storage.setLastManifest) {
         await storage.setLastManifest(null);
       }
     },
@@ -178,17 +226,12 @@ function createLibrary({ storage, http, video, clock }) {
         await this.refresh();
       }
       const show = SHOWS[showKey];
-      const all = await loadWatchProgress();
+      const watchProgressByEpisodeId = await loadWatchProgress();
       return {
         title: show ? show.title : "",
-        episodes: (episodesByShow[showKey] || []).map((episode) => {
-          const progress = all[episode.episodeId];
-          return {
-            ...episode,
-            completed: Boolean(progress && progress.completed),
-            lastPlayedAt: progress ? progress.lastPlayedAt || null : null,
-          };
-        }),
+        episodes: (episodesByShow[showKey] || []).map((episode) =>
+          episodeRow(episode, watchProgressByEpisodeId[episode.episodeId]),
+        ),
       };
     },
 
@@ -196,32 +239,28 @@ function createLibrary({ storage, http, video, clock }) {
       if (!fetchedManifest) {
         await this.refresh();
       }
-      const all = await loadWatchProgress();
+      const watchProgressByEpisodeId = await loadWatchProgress();
       const episodes = [];
-      Object.keys(all).forEach((episodeId) => {
-        const progress = all[episodeId];
+      Object.keys(watchProgressByEpisodeId).forEach((episodeId) => {
+        const progress = watchProgressByEpisodeId[episodeId];
         if (
           !(progress && progress.completed !== true && progress.positionSeconds > 0)
         ) {
           return;
         }
-        let episode = null;
-        Object.keys(SHOWS).forEach((showKey) => {
-          if (episode) {
-            return;
-          }
-          episode = (episodesByShow[showKey] || []).find(
-            (item) => item.episodeId === episodeId,
-          );
-        });
+        const episode = findEpisodeById(episodesByShow, episodeId);
         if (!episode) {
           return;
         }
-        episodes.push({
-          episodeId: episode.episodeId,
-          title: episode.title,
-          lastPlayedAt: progress.lastPlayedAt || null,
-        });
+        episodes.push(
+          episodeRow(
+            {
+              episodeId: episode.episodeId,
+              title: episode.title,
+            },
+            progress,
+          ),
+        );
       });
       episodes.sort((a, b) =>
         String(b.lastPlayedAt || "").localeCompare(String(a.lastPlayedAt || "")),
@@ -230,7 +269,9 @@ function createLibrary({ storage, http, video, clock }) {
         return {
           empty: true,
           episodes: [],
-          copy: "还没有看到一半的 Episode。",
+          copy: "还没有看到一半的 Episode。去片库看看。",
+          primaryAction: "goToLibrary",
+          actionLabel: "去片库",
         };
       }
       return {
@@ -244,17 +285,10 @@ function createLibrary({ storage, http, video, clock }) {
       if (!fetchedManifest) {
         await this.refresh();
       }
-      let episode = null;
-      Object.keys(SHOWS).forEach((showKey) => {
-        if (episode) {
-          return;
-        }
-        episode = (episodesByShow[showKey] || []).find(
-          (item) => item.episodeId === episodeId,
-        );
-      });
+      const episode = findEpisodeById(episodesByShow, episodeId);
       const source = episode ? episode.source : "";
       playbackRate = 1;
+      playbackFailed.delete(episodeId);
       const progress = (await loadWatchProgress())[episodeId];
       const positionSeconds =
         !progress || progress.completed ? 0 : progress.positionSeconds;
@@ -262,16 +296,11 @@ function createLibrary({ storage, http, video, clock }) {
         try {
           await video.load(source);
         } catch (_err) {
-          return {
-            title: episode ? episode.title : "",
-            source,
+          playbackFailed.add(episodeId);
+          return sourceFailView(episode, {
             playbackRate,
-            rates: PLAYBACK_RATES,
-            positionSeconds,
-            playbackFailed: true,
-            copy: "无法播放。请检查 Source 地址。SET 不托管视频。",
-            actionLabel: "返回",
-          };
+            fields: { positionSeconds },
+          });
         }
       }
       if (video && video.setPlaybackRate) {
@@ -290,41 +319,46 @@ function createLibrary({ storage, http, video, clock }) {
       if (!fetchedManifest) {
         await this.refresh();
       }
-      let episode = null;
-      Object.keys(SHOWS).forEach((showKey) => {
-        if (episode) {
-          return;
+      playbackFailed.add(episodeId);
+      if (progressBeforePlay.has(episodeId)) {
+        const watchProgressByEpisodeId = { ...(await loadWatchProgress()) };
+        const previous = progressBeforePlay.get(episodeId);
+        if (previous == null) {
+          delete watchProgressByEpisodeId[episodeId];
+        } else {
+          watchProgressByEpisodeId[episodeId] = previous;
         }
-        episode = (episodesByShow[showKey] || []).find(
-          (item) => item.episodeId === episodeId,
-        );
-      });
-      return {
-        title: episode ? episode.title : "",
-        source: episode ? episode.source : "",
-        playbackRate,
-        rates: PLAYBACK_RATES,
-        playbackFailed: true,
-        copy: "无法播放。请检查 Source 地址。SET 不托管视频。",
-        actionLabel: "返回",
-      };
+        await saveWatchProgress(watchProgressByEpisodeId);
+        progressBeforePlay.delete(episodeId);
+      }
+      const episode = findEpisodeById(episodesByShow, episodeId);
+      return sourceFailView(episode, { playbackRate, fields: {} });
     },
 
     async playEpisode(episodeId) {
-      const all = { ...(await loadWatchProgress()) };
-      const previous = all[episodeId] || {};
-      all[episodeId] = {
+      if (playbackFailed.has(episodeId)) {
+        return;
+      }
+      const watchProgressByEpisodeId = { ...(await loadWatchProgress()) };
+      if (!progressBeforePlay.has(episodeId)) {
+        progressBeforePlay.set(episodeId, watchProgressByEpisodeId[episodeId]);
+      }
+      const previous = watchProgressByEpisodeId[episodeId] || {};
+      watchProgressByEpisodeId[episodeId] = {
         ...previous,
         positionSeconds: previous.positionSeconds || 0,
         completed: Boolean(previous.completed),
         lastPlayedAt: nowIso(),
       };
-      await saveWatchProgress(all);
+      await saveWatchProgress(watchProgressByEpisodeId);
     },
 
     async leaveEpisode(episodeId, { positionSeconds, durationSeconds } = {}) {
-      const all = { ...(await loadWatchProgress()) };
-      const previous = all[episodeId];
+      if (playbackFailed.has(episodeId)) {
+        return;
+      }
+      const watchProgressByEpisodeId = { ...(await loadWatchProgress()) };
+      const previous = watchProgressByEpisodeId[episodeId];
       let completed = Boolean(previous && previous.completed);
       if (durationSeconds != null && durationSeconds > 0) {
         if (durationSeconds - positionSeconds < 5) {
@@ -333,13 +367,14 @@ function createLibrary({ storage, http, video, clock }) {
           completed = false;
         }
       }
-      all[episodeId] = {
+      watchProgressByEpisodeId[episodeId] = {
         ...(previous || {}),
         positionSeconds,
         completed,
-        lastPlayedAt: nowIso(),
+        ...(durationSeconds > 0 ? { durationSeconds } : {}),
       };
-      await saveWatchProgress(all);
+      progressBeforePlay.delete(episodeId);
+      await saveWatchProgress(watchProgressByEpisodeId);
     },
 
     async setPlaybackRate(rate) {

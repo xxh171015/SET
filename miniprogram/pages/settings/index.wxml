@@ -7,8 +7,8 @@
     class="url"
     type="text"
     placeholder="https://…"
-    value="{{draft}}"
-    bindinput="onDraftInput"
+    value="{{manifestUrl}}"
+    bindinput="onManifestUrlInput"
   />
   <button class="primary" bindtap="onSave">保存</button>
   <button class="ghost" bindtap="onRefresh">刷新</button>

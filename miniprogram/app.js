@@ -7,6 +7,11 @@ App({
     this.library = createLibrary({
       storage: createWxStorage(),
       http: createWxHttp(),
+      clock: {
+        now() {
+          return new Date(Date.now()).toISOString();
+        },
+      },
     });
     this.library.refresh();
   },

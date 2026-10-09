@@ -8,6 +8,7 @@
   >
     <view class="row-main">
       <view class="title">{{item.title}}</view>
+      <view wx:if="{{item.progressLabel}}" class="muted">{{item.progressLabel}}</view>
       <view wx:if="{{item.lastPlayedDate}}" class="muted">{{item.lastPlayedDate}}</view>
     </view>
     <view wx:if="{{item.completed}}" class="check">✓</view>

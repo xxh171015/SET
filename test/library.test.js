@@ -174,17 +174,6 @@ describe("Library", () => {
     );
   });
 
-  it("片库 Stage home has no 继续 banner", async () => {
-    const library = createLibrary({
-      storage: memoryStorage(),
-      http: memoryHttp({}),
-    });
-    await library.saveManifestUrl("https://example.com/manifest.json");
-    const view = await library.viewLibrary();
-
-    assert.equal(view.continueBanner, false);
-  });
-
   it("a Stage lists only its fixed Shows", async () => {
     const library = createLibrary({
       storage: memoryStorage(),
@@ -455,6 +444,38 @@ describe("Library", () => {
     assert.equal(show.episodes[0].episodeId, "yakka-dee-apple");
   });
 
+  it("saving a non-empty Manifest URL keeps the last successful Manifest when the next fetch fails", async () => {
+    const storage = memoryStorage();
+    const http = memoryHttp({
+      "yakka-dee": [
+        {
+          episodeId: "yakka-dee-apple",
+          title: "Apple",
+          sortKey: "001",
+          source: "https://cdn.example/yakka-dee-apple.mp4",
+        },
+      ],
+    });
+    const library = createLibrary({ storage, http });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+
+    http.setBody(null);
+    http.getJson = async () => {
+      throw new Error("offline");
+    };
+    await library.saveManifestUrl("https://other.example/manifest.json");
+    const view = await library.viewLibrary();
+
+    assert.equal(view.empty, false);
+    assert.equal(view.stale, true);
+    assert.equal(view.copy, "当前显示的是上次成功获取的 Manifest，可能不是最新。");
+    assert.equal(view.refreshLabel, "刷新");
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].episodeId, "yakka-dee-apple");
+  });
+
   it("刷新 fetches the Manifest again so new Episodes appear", async () => {
     const http = memoryHttp({ friends: [] });
     const library = createLibrary({
@@ -483,6 +504,65 @@ describe("Library", () => {
       show.episodes[0].title,
       "The One Where Monica Gets a Roommate",
     );
+  });
+
+  it("duplicate Manifest episodeIds do not render extra rows and share one WatchProgress", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple duplicate",
+            sortKey: "002",
+            source: "https://cdn.example/yakka-dee-apple-dup.mp4",
+          },
+        ],
+        friends: [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Should not become another Episode",
+            sortKey: "S01E01",
+            source: "https://cdn.example/friends-wrong.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+
+    const yakka = await library.viewShow("yakka-dee");
+    assert.equal(yakka.episodes.length, 1);
+    assert.equal(yakka.episodes[0].episodeId, "yakka-dee-apple");
+    assert.equal(yakka.episodes[0].title, "Apple");
+    assert.equal(
+      yakka.episodes[0].source,
+      "https://cdn.example/yakka-dee-apple.mp4",
+    );
+
+    const friends = await library.viewShow("friends");
+    assert.deepEqual(friends.episodes, []);
+    assert.equal(friends.title, "Friends");
+
+    const libraryHome = await library.viewLibrary();
+    assert.deepEqual(
+      libraryHome.stages.map((stage) => stage.stageId),
+      ["beginner", "intermediate", "advanced", "ultimate"],
+    );
+
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+    const afterProgress = await library.viewShow("yakka-dee");
+    assert.equal(afterProgress.episodes.length, 1);
+    assert.equal(afterProgress.episodes[0].positionSeconds, 42);
   });
 
   it("Episode identity is EpisodeId when Source or sort key change", async () => {
@@ -600,7 +680,9 @@ describe("Library", () => {
 
     assert.equal(view.empty, true);
     assert.deepEqual(view.episodes, []);
-    assert.equal(view.copy, "还没有看到一半的 Episode。");
+    assert.match(view.copy, /片库/);
+    assert.equal(view.primaryAction, "goToLibrary");
+    assert.equal(view.actionLabel, "去片库");
   });
 
   it("opening an Episode plays that Episode's HTTPS Source", async () => {
@@ -871,6 +953,68 @@ describe("Library", () => {
     assert.equal(show.episodes[0].completed, true);
   });
 
+  it("片库 Episode rows surface positionSeconds when WatchProgress exists", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].title, "Apple");
+    assert.equal(show.episodes[0].positionSeconds, 42);
+
+    const inProgress = await library.viewInProgress();
+    assert.equal(inProgress.episodes[0].positionSeconds, 42);
+  });
+
+  it("Episode rows show duration only after the player reports it, not from the Manifest", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+            duration: 9999,
+            durationSeconds: 9999,
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+
+    const beforePlay = await library.viewShow("yakka-dee");
+    assert.equal(beforePlay.episodes[0].durationSeconds, undefined);
+
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].durationSeconds, 120);
+    const inProgress = await library.viewInProgress();
+    assert.equal(inProgress.episodes[0].durationSeconds, 120);
+  });
+
   it("a completed Episode opens at 0", async () => {
     const library = createLibrary({
       storage: memoryStorage(),
@@ -1002,7 +1146,8 @@ describe("Library", () => {
     assert.equal(view.source, "https://cdn.example/yakka-dee-apple-v2.mp4");
   });
 
-  it("leaving the player writes lastPlayedAt on WatchProgress", async () => {
+  it("leave without Play does not rewrite lastPlayedAt", async () => {
+    let now = "2026-04-01T12:00:00.000Z";
     const library = createLibrary({
       storage: memoryStorage(),
       http: memoryHttp({
@@ -1015,16 +1160,24 @@ describe("Library", () => {
           },
         ],
       }),
-      clock: { now: () => "2026-04-01T12:00:00.000Z" },
+      clock: { now: () => now },
     });
     await library.saveManifestUrl("https://example.com/manifest.json");
     await library.refresh();
+    await library.playEpisode("yakka-dee-apple");
     await library.leaveEpisode("yakka-dee-apple", {
-      positionSeconds: 42,
+      positionSeconds: 118,
+      durationSeconds: 120,
+    });
+
+    now = "2026-04-02T12:00:00.000Z";
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 0,
       durationSeconds: 120,
     });
 
     const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].completed, true);
     assert.equal(show.episodes[0].lastPlayedAt, "2026-04-01T12:00:00.000Z");
   });
 
@@ -1054,14 +1207,21 @@ describe("Library", () => {
     });
     await library.saveManifestUrl("https://example.com/manifest.json");
     await library.refresh();
+    await library.playEpisode("yakka-dee-apple");
     await library.leaveEpisode("yakka-dee-apple", {
       positionSeconds: 10,
       durationSeconds: 120,
     });
     now = "2026-03-15T09:00:00.000Z";
+    await library.playEpisode("friends-s01e01");
     await library.leaveEpisode("friends-s01e01", {
       positionSeconds: 20,
       durationSeconds: 1200,
+    });
+    now = "2026-03-15T10:00:00.000Z";
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 12,
+      durationSeconds: 120,
     });
 
     const view = await library.viewInProgress();
@@ -1096,6 +1256,80 @@ describe("Library", () => {
     assert.equal(show.episodes[0].completed, false);
     const inProgress = await library.viewInProgress();
     assert.equal(inProgress.empty, true);
+  });
+
+  it("play then Source failure leaves WatchProgress unchanged", async () => {
+    let now = "2026-03-15T08:00:00.000Z";
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      clock: { now: () => now },
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.playEpisode("yakka-dee-apple");
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    now = "2026-03-16T08:00:00.000Z";
+    await library.playEpisode("yakka-dee-apple");
+    const view = await library.sourceFailed("yakka-dee-apple");
+
+    assert.equal(view.playbackFailed, true);
+    assert.equal(view.copy, "无法播放。请检查 Source 地址。SET 不托管视频。");
+    assert.equal(view.actionLabel, "返回");
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].lastPlayedAt, "2026-03-15T08:00:00.000Z");
+    assert.equal(show.episodes[0].positionSeconds, 42);
+  });
+
+  it("Play after Source failure does not stamp lastPlayedAt", async () => {
+    let now = "2026-03-15T08:00:00.000Z";
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      clock: { now: () => now },
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.playEpisode("yakka-dee-apple");
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    now = "2026-03-16T08:00:00.000Z";
+    await library.sourceFailed("yakka-dee-apple");
+    await library.playEpisode("yakka-dee-apple");
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 0,
+      durationSeconds: 0,
+    });
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].lastPlayedAt, "2026-03-15T08:00:00.000Z");
+    assert.equal(show.episodes[0].positionSeconds, 42);
   });
 
   it("Source playback failure stays on the player with 返回 and does not change WatchProgress", async () => {

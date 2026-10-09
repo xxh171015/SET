@@ -2,22 +2,22 @@ const app = getApp();
 
 Page({
   data: {
-    draft: "",
+    manifestUrl: "",
   },
 
   async onShow() {
     const view = await app.library.viewSettings();
-    this.setData({ draft: view.manifestUrl });
+    this.setData({ manifestUrl: view.manifestUrl });
   },
 
-  onDraftInput(event) {
-    this.setData({ draft: event.detail.value });
+  onManifestUrlInput(event) {
+    this.setData({ manifestUrl: event.detail.value });
   },
 
   async onSave() {
-    await app.library.saveManifestUrl(this.data.draft);
+    await app.library.saveManifestUrl(this.data.manifestUrl);
     const view = await app.library.viewSettings();
-    this.setData({ draft: view.manifestUrl });
+    this.setData({ manifestUrl: view.manifestUrl });
   },
 
   async onRefresh() {
