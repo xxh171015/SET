@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Library browse and player UX</title>
+  <!--
+    Variants A/B/C plus D (winner: B tab bar + A drill-down), ?variant=.
+    Throwaway HTML (no existing app route). Sub-shape B.
+    Question: How should browsing the Library and playing an Episode look
+    and behave on WeChat? What is on each screen, and what is not?
+  -->
+  <style>
+    :root { font-family: -apple-system, "PingFang SC", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #1a1a1a; color: #111; }
+    .page { display: flex; gap: 24px; padding: 24px 24px 96px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+    .phone {
+      width: 390px; height: 760px; background: #fff; border-radius: 28px;
+      overflow: hidden; position: relative; box-shadow: 0 20px 60px #0008;
+      display: flex; flex-direction: column;
+    }
+    .status { height: 28px; font-size: 12px; padding: 6px 16px; display: flex; justify-content: space-between; color: #111; }
+    .nav { height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-bottom: 1px solid #eee; flex-shrink: 0; }
+    .nav b { flex: 1; text-align: center; font-size: 16px; }
+    .nav button, .icon-btn {
+      border: 0; background: none; font-size: 16px; padding: 8px; cursor: pointer;
+    }
+    .body { flex: 1; overflow: auto; background: #f5f5f5; }
+    .tabbar {
+      height: 56px; display: flex; border-top: 1px solid #eee; background: #fff; flex-shrink: 0;
+    }
+    .tabbar button {
+      flex: 1; border: 0; background: none; font-size: 12px; cursor: pointer; color: #888;
+    }
+    .tabbar button.on { color: #07c160; font-weight: 600; }
+    .card { background: #fff; margin: 12px; padding: 14px; border-radius: 12px; }
+    .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+    .row:last-child { border-bottom: 0; }
+    .thumb { width: 48px; height: 48px; border-radius: 8px; background: #ddd; flex-shrink: 0; display: grid; place-items: center; font-size: 11px; color: #666; }
+    .muted { color: #888; font-size: 12px; }
+    .bar { height: 3px; background: #eee; border-radius: 2px; margin-top: 6px; }
+    .bar > i { display: block; height: 100%; background: #07c160; border-radius: 2px; }
+    .stage { margin: 12px; padding: 28px 16px; border-radius: 16px; color: #fff; cursor: pointer; }
+    .chip { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #eee; margin: 4px; cursor: pointer; font-size: 13px; }
+    .chip.on { background: #07c160; color: #fff; }
+    .player-face { height: 210px; background: #111; color: #fff; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; }
+    .speeds { display: flex; gap: 8px; padding: 12px; flex-wrap: wrap; }
+    .speeds button { border: 1px solid #ddd; background: #fff; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+    .speeds button.on { border-color: #07c160; color: #07c160; }
+    .primary { background: #07c160; color: #fff; border: 0; border-radius: 8px; padding: 12px; width: calc(100% - 24px); margin: 12px; cursor: pointer; font-size: 15px; }
+    .ghost { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px; width: calc(100% - 24px); margin: 0 12px 12px; cursor: pointer; }
+    input[type=url], input[type=text] {
+      width: calc(100% - 24px); margin: 0 12px; padding: 10px; border: 1px solid #ddd; border-radius: 8px;
+    }
+    .banner { margin: 12px; padding: 12px; background: #fff7e6; border-radius: 8px; font-size: 13px; cursor: pointer; }
+    .sheet {
+      position: absolute; left: 0; right: 0; bottom: 0; top: 80px; background: #fff;
+      border-radius: 16px 16px 0 0; display: flex; flex-direction: column;
+      box-shadow: 0 -8px 32px #0004;
+    }
+    .now-hero { margin: 12px; padding: 16px; background: #111; color: #fff; border-radius: 16px; cursor: pointer; }
+    .state-dump {
+      width: 360px; background: #111; color: #9f9; font: 12px/1.45 ui-monospace, monospace;
+      padding: 16px; border-radius: 12px; white-space: pre-wrap; max-height: 760px; overflow: auto;
+    }
+    .note { color: #ccc; font: 13px/1.5 sans-serif; max-width: 390px; }
+    .proto-bar {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+      background: #111; color: #fff; border-radius: 999px; display: flex; align-items: center;
+      gap: 8px; padding: 8px 12px; box-shadow: 0 8px 24px #0008; z-index: 50;
+    }
+    .proto-bar button { background: #333; color: #fff; border: 0; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 18px; }
+    .proto-bar span { min-width: 220px; text-align: center; font-size: 13px; }
+    .tag { font-size: 10px; color: #c00; letter-spacing: .08em; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div>
+      <p class="tag">THROW AWAY — PROTOTYPE</p>
+      <p class="note">A/B/C 是草案。D 是选定：B 的底栏三页 + A 的 Stage→Show→Episode 下钻；播放为全页、无底栏。假数据。</p>
+      <div class="phone" id="phone"></div>
+    </div>
+    <pre class="state-dump" id="dump"></pre>
+  </div>
+  <div class="proto-bar" id="switcher">
+    <button type="button" id="prev" aria-label="上一变体">←</button>
+    <span id="label"></span>
+    <button type="button" id="next" aria-label="下一变体">→</button>
+  </div>
+  <script>
+    const VARIANTS = {
+      A: "层级下钻",
+      B: "底栏三页 + 播放半屏",
+      C: "现在播放优先",
+      D: "底栏 + 下钻（选定）"
+    };
+    const VARIANT_KEYS = ["A", "B", "C", "D"];
+    const STAGES = [
+      { id: "beginner", name: "初级", color: "#3b82f6", shows: ["yakka-dee", "cocomelon"] },
+      { id: "intermediate", name: "中级", color: "#10b981", shows: ["peter-rabbit"] },
+      { id: "advanced", name: "高级", color: "#f59e0b", shows: ["bojack"] },
+      { id: "ultimate", name: "终级", color: "#ef4444", shows: ["tbbt", "friends", "two-broke-girls"] }
+    ];
+    const SHOWS = {
+      "yakka-dee": { title: "Yakka Dee", stage: "beginner" },
+      "cocomelon": { title: "CoComelon", stage: "beginner" },
+      "peter-rabbit": { title: "Peter Rabbit", stage: "intermediate" },
+      "bojack": { title: "BoJack Horseman", stage: "advanced" },
+      "tbbt": { title: "The Big Bang Theory", stage: "ultimate" },
+      "friends": { title: "Friends", stage: "ultimate" },
+      "two-broke-girls": { title: "2 Broke Girls", stage: "ultimate" }
+    };
+    const EPISODES = [
+      { id: "yakka-dee-apple", show: "yakka-dee", title: "Apple", sort: "001", duration: 180, t: 0 },
+      { id: "cocomelon-wheels", show: "cocomelon", title: "Wheels on the Bus", sort: "001", duration: 200, t: 80 },
+      { id: "cocomelon-bath", show: "cocomelon", title: "Bath Song", sort: "002", duration: 160, t: 0 },
+      { id: "peter-rabbit-s01e01", show: "peter-rabbit", title: "The Tale of the Radish Robber", sort: "S01E01", duration: 660, t: 120 },
+      { id: "bojack-s01e01", show: "bojack", title: "S01E01 BoJack Horseman: The BoJack Horseman Story", sort: "S01E01", duration: 1500, t: 0 },
+      { id: "friends-s01e01", show: "friends", title: "S01E01 The One Where Monica Gets a Roommate", sort: "S01E01", duration: 1320, t: 400 },
+      { id: "friends-s01e02", show: "friends", title: "S01E02 The One with the Sonogram at the End", sort: "S01E02", duration: 1320, t: 0 },
+      { id: "tbbt-s01e01", show: "tbbt", title: "S01E01 Pilot", sort: "S01E01", duration: 1260, t: 0 },
+      { id: "two-broke-girls-s01e01", show: "two-broke-girls", title: "S01E01 Pilot", sort: "S01E01", duration: 1260, t: 0 }
+    ];
+
+    const params = new URLSearchParams(location.search);
+    const state = {
+      variant: VARIANT_KEYS.includes(params.get("variant")) ? params.get("variant") : "D",
+      playerReturn: "episodes",
+      manifestUrl: "https://oss.example/set/manifest.json",
+      screen: "home",
+      tab: "library",
+      stageId: null,
+      showId: null,
+      episodeId: null,
+      rate: 1,
+      playing: false,
+      filter: "all",
+      lastAction: "load"
+    };
+
+    function fmt(sec) {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return m + ":" + String(s).padStart(2, "0");
+    }
+    function ep(id) { return EPISODES.find((e) => e.id === id); }
+    function inProgress() { return EPISODES.filter((e) => e.t > 0 && e.t < e.duration - 5); }
+    function byShow(id) { return EPISODES.filter((e) => e.show === id).sort((a, b) => a.sort.localeCompare(b.sort)); }
+
+    function setVariant(v) {
+      const u = new URL(location.href);
+      u.searchParams.set("variant", v);
+      history.replaceState(null, "", u);
+      state.variant = v;
+      state.screen = v === "C" ? "now" : "home";
+      state.tab = "library";
+      state.stageId = null;
+      state.showId = null;
+      state.episodeId = null;
+      state.lastAction = "switch-variant";
+      render();
+    }
+
+    function dump() {
+      document.getElementById("dump").textContent = JSON.stringify({
+        variant: state.variant + " (" + VARIANTS[state.variant] + ")",
+        manifestUrl: state.manifestUrl,
+        screen: state.screen,
+        tab: state.tab,
+        stageId: state.stageId,
+        showId: state.showId,
+        episodeId: state.episodeId,
+        rate: state.rate,
+        playing: state.playing,
+        filter: state.filter,
+        lastAction: state.lastAction,
+        watchProgress: Object.fromEntries(EPISODES.filter((e) => e.t > 0).map((e) => [e.id, e.t]))
+      }, null, 2);
+    }
+
+    function nav(title, back, gear) {
+      return `<div class="nav">${
+        back ? `<button type="button" data-act="${back}">‹</button>` : `<span style="width:36px"></span>`
+      }<b>${title}</b>${
+        gear === false ? `<span style="width:36px"></span>` : `<button type="button" data-act="settings">⚙️</button>`
+      }</div>`;
+    }
+
+    function episodeRow(e, extra) {
+      const pct = Math.round((e.t / e.duration) * 100);
+      return `<div class="row" data-act="play" data-id="${e.id}">
+        <div class="thumb">▶</div>
+        <div style="flex:1;min-width:0">
+          <div>${e.title}</div>
+          <div class="muted">${SHOWS[e.show].title} · ${fmt(e.duration)}${e.t ? " · 看到 " + fmt(e.t) : ""}</div>
+          ${e.t ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}
+        </div>${extra || ""}
+      </div>`;
+    }
+
+    function playerChrome(e) {
+      const pct = Math.round((e.t / e.duration) * 100);
+      return `<div class="player-face">
+          <div>${e.title}</div>
+          <div class="muted" style="color:#bbb">${SHOWS[e.show].title} · ${fmt(e.t)} / ${fmt(e.duration)}</div>
+          <div class="bar" style="background:#333;margin-top:10px"><i style="width:${pct}%"></i></div>
+        </div>
+        <div class="speeds">
+          ${[0.75, 1, 1.25, 1.5, 2].map((r) =>
+            `<button type="button" class="${state.rate === r ? "on" : ""}" data-act="rate" data-rate="${r}">${r}x</button>`
+          ).join("")}
+        </div>
+        <button class="primary" type="button" data-act="toggle">${state.playing ? "暂停" : (e.t ? "继续播放" : "播放")}</button>
+        <p class="muted" style="padding:0 16px">v1：播放 · 倍速 · 续播。没有字幕、没有跟读、没有切片段。</p>`;
+    }
+
+    function settings() {
+      return `${nav("设置", state.variant === "A" ? "home" : "")}
+        <div class="body">
+          <div class="card"><b>Manifest URL</b><p class="muted">贴一次长期 HTTPS 地址。空 = 空 Library。</p></div>
+          <input type="url" id="manifest" value="${state.manifestUrl}" placeholder="https://…" />
+          <button class="primary" type="button" data-act="save-manifest">保存</button>
+          <button class="ghost" type="button" data-act="refresh">刷新 Manifest</button>
+          <button class="ghost" type="button" data-act="clear-manifest">PROTOTYPE：清空 URL</button>
+        </div>`;
+    }
+
+    function empty() {
+      return `${nav("SET")}
+        <div class="body">
+          <div class="card">
+            <b>还没有 Manifest</b>
+            <p class="muted">在设置里贴上 Manifest 的 HTTPS 地址，然后刷新。</p>
+          </div>
+          <button class="primary" type="button" data-act="settings">去设置</button>
+        </div>`;
+    }
+
+    function variantA() {
+      if (!state.manifestUrl) return empty();
+      if (state.screen === "settings") return settings();
+      if (state.screen === "player") {
+        const e = ep(state.episodeId);
+        return `${nav("播放", "episodes")}<div class="body">${playerChrome(e)}</div>`;
+      }
+      if (state.screen === "episodes") {
+        const s = SHOWS[state.showId];
+        return `${nav(s.title, "shows")}
+          <div class="body">${byShow(state.showId).map((e) => episodeRow(e)).join("")}</div>`;
+      }
+      if (state.screen === "shows") {
+        const st = STAGES.find((x) => x.id === state.stageId);
+        return `${nav(st.name, "home")}
+          <div class="body">${st.shows.map((id) => {
+            const n = byShow(id).length;
+            return `<div class="row" data-act="open-show" data-id="${id}">
+              <div class="thumb">${n}集</div>
+              <div><div>${SHOWS[id].title}</div><div class="muted">${st.name}</div></div>
+            </div>`;
+          }).join("")}</div>`;
+      }
+      return `${nav("片库")}
+        <div class="body">
+          ${inProgress()[0] ? `<div class="banner" data-act="play" data-id="${inProgress()[0].id}">继续 · ${inProgress()[0].title} ${fmt(inProgress()[0].t)}</div>` : ""}
+          ${STAGES.map((st) =>
+            `<div class="stage" style="background:${st.color}" data-act="open-stage" data-id="${st.id}">
+              <b>${st.name}</b>
+              <div style="opacity:.9;font-size:13px;margin-top:6px">${st.shows.map((id) => SHOWS[id].title).join(" · ")}</div>
+            </div>`
+          ).join("")}
+        </div>`;
+    }
+
+    function variantB() {
+      if (state.screen === "settings" || state.tab === "settings") {
+        return `<div class="nav"><span style="width:36px"></span><b>设置</b><span style="width:36px"></span></div>
+          ${settings().replace(/^[\s\S]*<div class="body">/, "<div class=\"body\">")}
+          ${tabbar("settings")}`;
+      }
+      if (!state.manifestUrl) {
+        return empty() + tabbar("library");
+      }
+      let main = "";
+      if (state.tab === "continue") {
+        main = `${nav("继续看", "")}<div class="body">${
+          inProgress().length ? inProgress().map((e) => episodeRow(e)).join("") : `<div class="card">还没有看到一半的 Episode。</div>`
+        }</div>`;
+      } else {
+        main = `${nav("片库")}
+          <div class="body">${STAGES.map((st) =>
+            `<div class="card" style="padding:0">
+              <div style="padding:12px 16px;font-weight:600">${st.name}</div>
+              ${st.shows.map((id) =>
+                `<div class="row" data-act="toggle-show" data-id="${id}">
+                  <div class="thumb">${byShow(id).length}</div>
+                  <div style="flex:1"><div>${SHOWS[id].title}</div><div class="muted">点开展开 Episode</div></div>
+                </div>` +
+                (state.showId === id ? byShow(id).map((e) => episodeRow(e)).join("") : "")
+              ).join("")}
+            </div>`
+          ).join("")}</div>`;
+      }
+      const sheet = state.episodeId ? `<div class="sheet">
+        <div class="nav"><button type="button" data-act="close-sheet">关闭</button><b>播放</b><span style="width:36px"></span></div>
+        <div class="body">${playerChrome(ep(state.episodeId))}</div>
+      </div>` : "";
+      return main + tabbar(state.tab) + sheet;
+    }
+
+    function tabbar(on) {
+      return `<div class="tabbar">
+        <button type="button" class="${on === "library" ? "on" : ""}" data-act="tab" data-tab="library">片库</button>
+        <button type="button" class="${on === "continue" ? "on" : ""}" data-act="tab" data-tab="continue">继续看</button>
+        <button type="button" class="${on === "settings" ? "on" : ""}" data-act="tab" data-tab="settings">设置</button>
+      </div>`;
+    }
+
+    function variantD() {
+      if (state.tab === "settings" || state.screen === "settings") {
+        return `${nav("设置", "", false)}
+          <div class="body">
+            <div class="card"><b>Manifest URL</b><p class="muted">贴一次长期 HTTPS 地址。空 = 空 Library。</p></div>
+            <input type="url" id="manifest" value="${state.manifestUrl}" placeholder="https://…" />
+            <button class="primary" type="button" data-act="save-manifest">保存</button>
+            <button class="ghost" type="button" data-act="refresh">刷新 Manifest</button>
+            <button class="ghost" type="button" data-act="clear-manifest">PROTOTYPE：清空 URL</button>
+          </div>${tabbar("settings")}`;
+      }
+      if (!state.manifestUrl) return empty() + tabbar("library");
+      if (state.screen === "player") {
+        const e = ep(state.episodeId);
+        return `${nav("播放", "back-player", false)}<div class="body">${playerChrome(e)}</div>`;
+      }
+      if (state.tab === "continue") {
+        return `${nav("继续看", "", false)}<div class="body">${
+          inProgress().length ? inProgress().map((e) => episodeRow(e)).join("") : `<div class="card">还没有看到一半的 Episode。</div>`
+        }</div>${tabbar("continue")}`;
+      }
+      if (state.screen === "episodes") {
+        const s = SHOWS[state.showId];
+        return `${nav(s.title, "shows", false)}
+          <div class="body">${byShow(state.showId).map((e) => episodeRow(e)).join("")}</div>
+          ${tabbar("library")}`;
+      }
+      if (state.screen === "shows") {
+        const st = STAGES.find((x) => x.id === state.stageId);
+        return `${nav(st.name, "home", false)}
+          <div class="body">${st.shows.map((id) => {
+            const n = byShow(id).length;
+            return `<div class="row" data-act="open-show" data-id="${id}">
+              <div class="thumb">${n}集</div>
+              <div><div>${SHOWS[id].title}</div><div class="muted">${st.name}</div></div>
+            </div>`;
+          }).join("")}</div>
+          ${tabbar("library")}`;
+      }
+      return `${nav("片库", "", false)}
+        <div class="body">
+          ${STAGES.map((st) =>
+            `<div class="stage" style="background:${st.color}" data-act="open-stage" data-id="${st.id}">
+              <b>${st.name}</b>
+              <div style="opacity:.9;font-size:13px;margin-top:6px">${st.shows.map((id) => SHOWS[id].title).join(" · ")}</div>
+            </div>`
+          ).join("")}
+        </div>${tabbar("library")}`;
+    }
+
+    function variantC() {
+      if (state.screen === "settings") return settings();
+      if (!state.manifestUrl) return empty();
+      const current = inProgress()[0] || EPISODES[0];
+      if (state.screen === "player") {
+        return `${nav("播放", "now")}<div class="body">${playerChrome(ep(state.episodeId))}</div>`;
+      }
+      const list = state.filter === "all" ? EPISODES : EPISODES.filter((e) => SHOWS[e.show].stage === state.filter);
+      return `${nav("SET")}
+        <div class="body">
+          <div class="now-hero" data-act="play" data-id="${current.id}">
+            <div class="muted" style="color:#aaa">现在播放</div>
+            <div style="font-size:18px;margin:6px 0">${current.title}</div>
+            <div class="muted" style="color:#bbb">${SHOWS[current.show].title} · ${fmt(current.t)} / ${fmt(current.duration)}</div>
+          </div>
+          <div style="padding:4px 8px">
+            <span class="chip ${state.filter === "all" ? "on" : ""}" data-act="filter" data-id="all">全部</span>
+            ${STAGES.map((st) =>
+              `<span class="chip ${state.filter === st.id ? "on" : ""}" data-act="filter" data-id="${st.id}">${st.name}</span>`
+            ).join("")}
+          </div>
+          ${list.map((e) => episodeRow(e)).join("")}
+        </div>`;
+    }
+
+    function render() {
+      const phone = document.getElementById("phone");
+      const inner = state.variant === "A" ? variantA() : state.variant === "B" ? variantB() : state.variant === "D" ? variantD() : variantC();
+      phone.innerHTML = `<div class="status"><span>09:41</span><span>SET 原型</span></div>` + inner;
+      document.getElementById("label").textContent = state.variant + "（" + VARIANTS[state.variant] + "）";
+      dump();
+    }
+
+    document.getElementById("phone").addEventListener("click", (ev) => {
+      const el = ev.target.closest("[data-act]");
+      if (!el) return;
+      const act = el.dataset.act;
+      state.lastAction = act;
+      if (act === "settings") { state.screen = "settings"; state.tab = "settings"; }
+      if (act === "home" || act === "now") { state.screen = act === "now" ? "now" : "home"; state.episodeId = null; }
+      if (act === "shows") state.screen = "shows";
+      if (act === "episodes") { state.screen = "episodes"; state.episodeId = null; }
+      if (act === "open-stage") { state.stageId = el.dataset.id; state.screen = "shows"; }
+      if (act === "open-show") { state.showId = el.dataset.id; state.screen = "episodes"; }
+      if (act === "toggle-show") {
+        state.showId = state.showId === el.dataset.id ? null : el.dataset.id;
+      }
+      if (act === "play") {
+        state.episodeId = el.dataset.id;
+        state.playing = true;
+        state.playerReturn = state.tab === "continue" ? "continue" : "episodes";
+        state.screen = state.variant === "B" ? state.screen : "player";
+      }
+      if (act === "back-player") {
+        state.screen = state.playerReturn === "continue" ? "continue" : "episodes";
+        if (state.playerReturn === "continue") state.tab = "continue";
+        state.episodeId = null;
+        state.playing = false;
+      }
+      if (act === "close-sheet") { state.episodeId = null; state.playing = false; }
+      if (act === "tab") {
+        state.tab = el.dataset.tab;
+        state.episodeId = null;
+        state.playing = false;
+        if (el.dataset.tab === "settings") state.screen = "settings";
+        else if (el.dataset.tab === "continue") state.screen = "continue";
+        else { state.screen = "home"; state.stageId = null; state.showId = null; }
+      }
+      if (act === "rate") state.rate = Number(el.dataset.rate);
+      if (act === "toggle") {
+        const e = ep(state.episodeId);
+        if (state.playing) { state.playing = false; }
+        else { state.playing = true; if (e && e.t === 0) e.t = 1; }
+      }
+      if (act === "filter") state.filter = el.dataset.id;
+      if (act === "refresh") state.lastAction = "refresh-manifest";
+      if (act === "clear-manifest") { state.manifestUrl = ""; state.screen = "home"; }
+      if (act === "save-manifest") {
+        const input = document.getElementById("manifest");
+        state.manifestUrl = input ? input.value.trim() : state.manifestUrl;
+        state.screen = "home";
+        state.tab = "library";
+      }
+      render();
+    });
+
+    document.getElementById("prev").onclick = () => {
+      const i = VARIANT_KEYS.indexOf(state.variant);
+      setVariant(VARIANT_KEYS[(i + VARIANT_KEYS.length - 1) % VARIANT_KEYS.length]);
+    };
+    document.getElementById("next").onclick = () => {
+      const i = VARIANT_KEYS.indexOf(state.variant);
+      setVariant(VARIANT_KEYS[(i + 1) % VARIANT_KEYS.length]);
+    };
+    document.addEventListener("keydown", (ev) => {
+      const t = ev.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (ev.key === "ArrowLeft") document.getElementById("prev").click();
+      if (ev.key === "ArrowRight") document.getElementById("next").click();
+    });
+
+    render();
+  </script>
+</body>
+</html>
