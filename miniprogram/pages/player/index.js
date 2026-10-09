@@ -7,14 +7,19 @@ Page({
     playbackRate: 1,
     rates: [],
     positionSeconds: 0,
+    playbackFailed: false,
+    copy: "",
+    actionLabel: "返回",
   },
 
   async onLoad(options) {
     this.episodeId = options.episodeId;
     this.positionSeconds = 0;
     this.durationSeconds = 0;
+    this.skipProgress = false;
     const view = await app.library.viewEpisode(this.episodeId);
     this.positionSeconds = view.positionSeconds || 0;
+    this.skipProgress = Boolean(view.playbackFailed);
     wx.setNavigationBarTitle({ title: view.title || "播放" });
     this.setData({
       title: view.title || "",
@@ -22,6 +27,9 @@ Page({
       playbackRate: view.playbackRate,
       rates: view.rates || [],
       positionSeconds: this.positionSeconds,
+      playbackFailed: Boolean(view.playbackFailed),
+      copy: view.copy || "",
+      actionLabel: view.actionLabel || "返回",
     });
   },
 
@@ -59,8 +67,18 @@ Page({
     this.saveProgress();
   },
 
+  async onError() {
+    this.skipProgress = true;
+    const view = await app.library.sourceFailed(this.episodeId);
+    this.setData({
+      playbackFailed: true,
+      copy: view.copy || "",
+      actionLabel: view.actionLabel || "返回",
+    });
+  },
+
   async saveProgress() {
-    if (!this.episodeId) {
+    if (!this.episodeId || this.skipProgress) {
       return;
     }
     await app.library.leaveEpisode(this.episodeId, {

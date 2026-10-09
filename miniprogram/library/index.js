@@ -21,6 +21,10 @@ const SHOWS = {
   "two-broke-girls": { title: "2 Broke Girls" },
 };
 
+function isManifestBody(body) {
+  return body != null && typeof body === "object" && !Array.isArray(body);
+}
+
 function episodesFromManifest(body) {
   const episodesByShow = {};
   Object.keys(SHOWS).forEach((showKey) => {
@@ -42,6 +46,7 @@ function episodesFromManifest(body) {
 function createLibrary({ storage, http, video, clock }) {
   let episodesByShow = {};
   let fetchedManifest = false;
+  let manifestStale = false;
   let playbackRate = 1;
 
   async function loadWatchProgress() {
@@ -84,13 +89,21 @@ function createLibrary({ storage, http, video, clock }) {
       if (!fetchedManifest) {
         return {
           empty: true,
+          stale: false,
+          copy: "无法获取 Manifest。",
           episodes: [],
           primaryAction: null,
-          actionLabel: null,
+          actionLabel: "去设置",
+          refreshLabel: "刷新",
         };
       }
       return {
         empty: false,
+        stale: manifestStale,
+        copy: manifestStale
+          ? "当前显示的是上次成功获取的 Manifest，可能不是最新。"
+          : null,
+        refreshLabel: manifestStale ? "刷新" : null,
         episodes: [],
         primaryAction: null,
         actionLabel: null,
@@ -111,6 +124,7 @@ function createLibrary({ storage, http, video, clock }) {
     async saveManifestUrl(url) {
       await storage.setManifestUrl(String(url ?? "").trim());
       fetchedManifest = false;
+      manifestStale = false;
       episodesByShow = {};
       if (storage.setLastManifest) {
         await storage.setLastManifest(null);
@@ -125,19 +139,24 @@ function createLibrary({ storage, http, video, clock }) {
       if (http) {
         try {
           const body = await http.getJson(manifestUrl);
+          if (!isManifestBody(body)) {
+            throw new Error("bad Manifest JSON");
+          }
           applyManifest(body);
+          manifestStale = false;
           if (storage.setLastManifest) {
             await storage.setLastManifest(body);
           }
           return;
         } catch (_err) {
-          // Keep last successful Manifest for browse; failure chrome is a later ticket.
+          // Keep last successful Manifest and mark it stale.
         }
       }
       const last =
         storage.getLastManifest ? await storage.getLastManifest() : null;
       if (last) {
         applyManifest(last);
+        manifestStale = true;
       }
     },
 
@@ -240,7 +259,20 @@ function createLibrary({ storage, http, video, clock }) {
       const positionSeconds =
         !progress || progress.completed ? 0 : progress.positionSeconds;
       if (video && video.load) {
-        await video.load(source);
+        try {
+          await video.load(source);
+        } catch (_err) {
+          return {
+            title: episode ? episode.title : "",
+            source,
+            playbackRate,
+            rates: PLAYBACK_RATES,
+            positionSeconds,
+            playbackFailed: true,
+            copy: "无法播放。请检查 Source 地址。SET 不托管视频。",
+            actionLabel: "返回",
+          };
+        }
       }
       if (video && video.setPlaybackRate) {
         await video.setPlaybackRate(playbackRate);
@@ -251,6 +283,30 @@ function createLibrary({ storage, http, video, clock }) {
         playbackRate,
         rates: PLAYBACK_RATES,
         positionSeconds,
+      };
+    },
+
+    async sourceFailed(episodeId) {
+      if (!fetchedManifest) {
+        await this.refresh();
+      }
+      let episode = null;
+      Object.keys(SHOWS).forEach((showKey) => {
+        if (episode) {
+          return;
+        }
+        episode = (episodesByShow[showKey] || []).find(
+          (item) => item.episodeId === episodeId,
+        );
+      });
+      return {
+        title: episode ? episode.title : "",
+        source: episode ? episode.source : "",
+        playbackRate,
+        rates: PLAYBACK_RATES,
+        playbackFailed: true,
+        copy: "无法播放。请检查 Source 地址。SET 不托管视频。",
+        actionLabel: "返回",
       };
     },
 

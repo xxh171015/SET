@@ -15,7 +15,11 @@
     bindplay="onPlay"
     bindtimeupdate="onTimeUpdate"
     bindended="onEnded"
+    binderror="onError"
   />
+  <view wx:if="{{playbackFailed}}" class="card">
+    <view class="title">{{copy}}</view>
+  </view>
   <view class="speeds">
     <view
       wx:for="{{rates}}"
@@ -27,5 +31,5 @@
       {{item}}x
     </view>
   </view>
-  <button class="ghost" bindtap="goBack">返回</button>
+  <button class="ghost" bindtap="goBack">{{actionLabel}}</button>
 </view>

@@ -67,6 +67,7 @@ describe("Library", () => {
     assert.deepEqual(view.episodes, []);
     assert.equal(view.primaryAction, "goToSettings");
     assert.equal(view.actionLabel, "去设置");
+    assert.notEqual(view.refreshLabel, "刷新");
   });
 
   it("saved Manifest URL persists on this install", async () => {
@@ -79,14 +80,15 @@ describe("Library", () => {
     assert.equal(settings.manifestUrl, "https://example.com/manifest.json");
   });
 
-  it("stored Manifest URL does not invent Episodes or offer 刷新", async () => {
+  it("stored Manifest URL does not invent Episodes", async () => {
     const library = createLibrary({ storage: memoryStorage() });
     await library.saveManifestUrl("https://example.com/manifest.json");
     const view = await library.viewLibrary();
 
+    assert.equal(view.empty, true);
     assert.deepEqual(view.episodes, []);
-    assert.equal(view.primaryAction, null);
-    assert.notEqual(view.actionLabel, "刷新");
+    assert.equal(view.refreshLabel, "刷新");
+    assert.equal(view.actionLabel, "去设置");
   });
 
   it("saving an empty Manifest URL returns empty Library with 去设置 and no Episodes", async () => {
@@ -365,6 +367,92 @@ describe("Library", () => {
     const show = await relaunched.viewShow("yakka-dee");
     assert.equal(show.episodes[0].episodeId, "yakka-dee-apple");
     assert.equal(show.episodes[0].title, "Apple");
+  });
+
+  it("offline launch with a last Manifest shows a stale banner and 刷新 and stays browsable", async () => {
+    const storage = memoryStorage();
+    const library = createLibrary({
+      storage,
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+
+    const relaunched = createLibrary({
+      storage,
+      http: {
+        async getJson() {
+          throw new Error("offline");
+        },
+      },
+    });
+    const view = await relaunched.viewLibrary();
+
+    assert.equal(view.empty, false);
+    assert.equal(view.stale, true);
+    assert.equal(view.copy, "当前显示的是上次成功获取的 Manifest，可能不是最新。");
+    assert.equal(view.refreshLabel, "刷新");
+    assert.notEqual(view.actionLabel, "去设置");
+
+    const show = await relaunched.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].episodeId, "yakka-dee-apple");
+  });
+
+  it("Manifest fetch failure with no last Manifest is empty Library plus 刷新 and 去设置", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: {
+        async getJson() {
+          throw new Error("offline");
+        },
+      },
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    const view = await library.viewLibrary();
+
+    assert.equal(view.empty, true);
+    assert.deepEqual(view.episodes, []);
+    assert.equal(view.stale, false);
+    assert.equal(view.copy, "无法获取 Manifest。");
+    assert.equal(view.refreshLabel, "刷新");
+    assert.equal(view.actionLabel, "去设置");
+  });
+
+  it("bad Manifest JSON with a last Manifest shows the stale Library and 刷新", async () => {
+    const storage = memoryStorage();
+    const http = memoryHttp({
+      "yakka-dee": [
+        {
+          episodeId: "yakka-dee-apple",
+          title: "Apple",
+          sortKey: "001",
+          source: "https://cdn.example/yakka-dee-apple.mp4",
+        },
+      ],
+    });
+    const library = createLibrary({ storage, http });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+
+    http.setBody([]);
+    const view = await library.viewLibrary();
+
+    assert.equal(view.empty, false);
+    assert.equal(view.stale, true);
+    assert.equal(view.copy, "当前显示的是上次成功获取的 Manifest，可能不是最新。");
+    assert.equal(view.refreshLabel, "刷新");
+
+    const show = await library.viewShow("yakka-dee");
+    assert.equal(show.episodes[0].episodeId, "yakka-dee-apple");
   });
 
   it("刷新 fetches the Manifest again so new Episodes appear", async () => {
@@ -1008,6 +1096,76 @@ describe("Library", () => {
     assert.equal(show.episodes[0].completed, false);
     const inProgress = await library.viewInProgress();
     assert.equal(inProgress.empty, true);
+  });
+
+  it("Source playback failure stays on the player with 返回 and does not change WatchProgress", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      video: memoryVideo(),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    const view = await library.sourceFailed("yakka-dee-apple");
+
+    assert.equal(view.playbackFailed, true);
+    assert.equal(view.title, "Apple");
+    assert.equal(view.source, "https://cdn.example/yakka-dee-apple.mp4");
+    assert.equal(view.copy, "无法播放。请检查 Source 地址。SET 不托管视频。");
+    assert.equal(view.actionLabel, "返回");
+
+    const resume = await library.viewEpisode("yakka-dee-apple");
+    assert.equal(resume.positionSeconds, 42);
+  });
+
+  it("a Source that will not load stays on the player with 返回 and does not change WatchProgress", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      video: {
+        async load() {
+          throw new Error("offline");
+        },
+      },
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.leaveEpisode("yakka-dee-apple", {
+      positionSeconds: 42,
+      durationSeconds: 120,
+    });
+
+    const view = await library.viewEpisode("yakka-dee-apple");
+
+    assert.equal(view.playbackFailed, true);
+    assert.equal(view.title, "Apple");
+    assert.equal(view.source, "https://cdn.example/yakka-dee-apple.mp4");
+    assert.equal(view.copy, "无法播放。请检查 Source 地址。SET 不托管视频。");
+    assert.equal(view.actionLabel, "返回");
+    assert.equal(view.positionSeconds, 42);
   });
 
   it("leaving a completed Episode at 0 keeps it completed", async () => {
