@@ -11,4 +11,5 @@
     bindinput="onDraftInput"
   />
   <button class="primary" bindtap="onSave">保存</button>
+  <button class="ghost" bindtap="onRefresh">刷新</button>
 </view>

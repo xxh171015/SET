@@ -19,4 +19,9 @@ Page({
     const view = await app.library.viewSettings();
     this.setData({ draft: view.manifestUrl });
   },
+
+  async onRefresh() {
+    await app.library.refresh();
+    wx.switchTab({ url: "/pages/library/index" });
+  },
 });

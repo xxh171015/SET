@@ -2,7 +2,9 @@
   "pages": [
     "pages/library/index",
     "pages/continue/index",
-    "pages/settings/index"
+    "pages/settings/index",
+    "pages/stage/index",
+    "pages/show/index"
   ],
   "window": {
     "backgroundTextStyle": "light",

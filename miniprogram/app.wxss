@@ -41,3 +41,56 @@ page {
 .primary::after {
   border: 0;
 }
+
+.ghost {
+  background: #ffffff;
+  color: #111111;
+  border: 1rpx solid #dddddd;
+  border-radius: 16rpx;
+  margin: 24rpx;
+  font-size: 30rpx;
+}
+
+.ghost::after {
+  border: 0;
+}
+
+.stage {
+  margin: 24rpx;
+  padding: 48rpx 32rpx;
+  border-radius: 24rpx;
+  color: #ffffff;
+}
+
+.stage .title {
+  color: #ffffff;
+}
+
+.stage .muted {
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 12rpx;
+}
+
+.stage-beginner {
+  background: #3b82f6;
+}
+
+.stage-intermediate {
+  background: #10b981;
+}
+
+.stage-advanced {
+  background: #f59e0b;
+}
+
+.stage-ultimate {
+  background: #ef4444;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}

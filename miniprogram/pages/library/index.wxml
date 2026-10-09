@@ -6,4 +6,16 @@
     </view>
     <button class="primary" bindtap="goToSettings">{{actionLabel}}</button>
   </view>
+  <view wx:elif="{{!empty}}">
+    <view
+      wx:for="{{stages}}"
+      wx:key="stageId"
+      class="stage stage-{{item.stageId}}"
+      data-stage-id="{{item.stageId}}"
+      bindtap="openStage"
+    >
+      <view class="title">{{item.name}}</view>
+      <view class="muted">{{item.showSummary}}</view>
+    </view>
+  </view>
 </view>
