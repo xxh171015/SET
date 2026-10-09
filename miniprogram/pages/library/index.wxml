@@ -1,0 +1,9 @@
+<view class="body">
+  <view wx:if="{{primaryAction === 'goToSettings'}}">
+    <view class="card">
+      <view class="title">还没有 Manifest</view>
+      <view class="muted">在设置里贴上 Manifest 的 HTTPS 地址。</view>
+    </view>
+    <button class="primary" bindtap="goToSettings">{{actionLabel}}</button>
+  </view>
+</view>

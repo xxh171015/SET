@@ -1,0 +1,9 @@
+{
+  "desc": "SET is unpublished and personal",
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "*"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "pages": [
+    "pages/library/index",
+    "pages/continue/index",
+    "pages/settings/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "backgroundColor": "#f5f5f5",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTitleText": "SET",
+    "navigationBarTextStyle": "black"
+  },
+  "tabBar": {
+    "color": "#888888",
+    "selectedColor": "#07c160",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/library/index",
+        "text": "片库",
+        "iconPath": "images/tab-library.png",
+        "selectedIconPath": "images/tab-library-on.png"
+      },
+      {
+        "pagePath": "pages/continue/index",
+        "text": "继续看",
+        "iconPath": "images/tab-continue.png",
+        "selectedIconPath": "images/tab-continue-on.png"
+      },
+      {
+        "pagePath": "pages/settings/index",
+        "text": "设置",
+        "iconPath": "images/tab-settings.png",
+        "selectedIconPath": "images/tab-settings-on.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
