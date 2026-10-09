@@ -1,0 +1,15 @@
+<view class="body">
+  <view class="card">
+    <view class="title">Manifest URL</view>
+    <view class="muted">贴一次长期 HTTPS 地址。空 = 空 Library。</view>
+  </view>
+  <input
+    class="url"
+    type="text"
+    placeholder="https://…"
+    value="{{manifestUrl}}"
+    bindinput="onManifestUrlInput"
+  />
+  <button class="primary" bindtap="onSave">保存</button>
+  <button class="ghost" bindtap="onRefresh">刷新</button>
+</view>

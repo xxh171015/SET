@@ -1,0 +1,21 @@
+<view class="body">
+  <view wx:if="{{empty}}">
+    <view class="card">{{copy}}</view>
+    <button wx:if="{{actionLabel}}" class="primary" bindtap="goToLibrary">
+      {{actionLabel}}
+    </button>
+  </view>
+  <view
+    wx:for="{{episodes}}"
+    wx:key="episodeId"
+    class="row"
+    data-episode-id="{{item.episodeId}}"
+    bindtap="openEpisode"
+  >
+    <view class="row-main">
+      <view class="title">{{item.title}}</view>
+      <view wx:if="{{item.progressLabel}}" class="muted">{{item.progressLabel}}</view>
+      <view wx:if="{{item.lastPlayedDate}}" class="muted">{{item.lastPlayedDate}}</view>
+    </view>
+  </view>
+</view>

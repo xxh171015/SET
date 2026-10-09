@@ -1,0 +1,32 @@
+<view class="body">
+  <view wx:if="{{empty}}">
+    <view class="card">
+      <view class="title">{{copy || "还没有 Manifest"}}</view>
+      <view wx:if="{{actionLabel === '去设置'}}" class="muted">在设置里贴上 Manifest 的 HTTPS 地址。</view>
+    </view>
+    <button wx:if="{{refreshLabel}}" class="primary" bindtap="onRefresh">{{refreshLabel}}</button>
+    <button
+      wx:if="{{actionLabel}}"
+      class="{{refreshLabel ? 'ghost' : 'primary'}}"
+      bindtap="goToSettings"
+    >
+      {{actionLabel}}
+    </button>
+  </view>
+  <view wx:else>
+    <view wx:if="{{stale}}" class="card">
+      <view class="muted">{{copy}}</view>
+    </view>
+    <button wx:if="{{refreshLabel}}" class="ghost" bindtap="onRefresh">{{refreshLabel}}</button>
+    <view
+      wx:for="{{stages}}"
+      wx:key="stageId"
+      class="stage stage-{{item.stageId}}"
+      data-stage-id="{{item.stageId}}"
+      bindtap="openStage"
+    >
+      <view class="title">{{item.name}}</view>
+      <view class="muted">{{item.showSummary}}</view>
+    </view>
+  </view>
+</view>

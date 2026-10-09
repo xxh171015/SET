@@ -1,0 +1,35 @@
+<view class="body">
+  <video
+    id="episode"
+    class="player"
+    src="{{source}}"
+    title="{{title}}"
+    playback-rate="{{playbackRate}}"
+    initial-time="{{positionSeconds}}"
+    object-fit="contain"
+    controls
+    show-center-play-btn
+    show-play-btn
+    show-background-playback-button="{{false}}"
+    enable-play-gesture
+    bindplay="onPlay"
+    bindtimeupdate="onTimeUpdate"
+    bindended="onEnded"
+    binderror="onError"
+  />
+  <view wx:if="{{playbackFailed}}" class="card">
+    <view class="title">{{copy}}</view>
+  </view>
+  <view class="speeds">
+    <view
+      wx:for="{{rates}}"
+      wx:key="*this"
+      class="speed {{item === playbackRate ? 'on' : ''}}"
+      data-rate="{{item}}"
+      bindtap="setRate"
+    >
+      {{item}}x
+    </view>
+  </view>
+  <button class="ghost" bindtap="goBack">{{actionLabel}}</button>
+</view>

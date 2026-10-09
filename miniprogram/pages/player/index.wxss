@@ -1,0 +1,26 @@
+.player {
+  width: 100%;
+  height: 420rpx;
+  background: #111111;
+}
+
+.speeds {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 24rpx;
+}
+
+.speed {
+  margin-right: 16rpx;
+  margin-bottom: 16rpx;
+  padding: 16rpx 28rpx;
+  border: 1rpx solid #dddddd;
+  border-radius: 16rpx;
+  background: #ffffff;
+  font-size: 28rpx;
+}
+
+.speed.on {
+  border-color: #07c160;
+  color: #07c160;
+}

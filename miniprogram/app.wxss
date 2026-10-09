@@ -1,0 +1,107 @@
+page {
+  background: #f5f5f5;
+  color: #111111;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+  font-size: 16px;
+}
+
+.body {
+  min-height: 100%;
+  padding-bottom: 24rpx;
+}
+
+.card {
+  background: #ffffff;
+  margin: 24rpx;
+  padding: 28rpx;
+  border-radius: 24rpx;
+}
+
+.title {
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.muted {
+  color: #888888;
+  font-size: 24rpx;
+  margin-top: 12rpx;
+  line-height: 1.5;
+}
+
+.primary {
+  background: #07c160;
+  color: #ffffff;
+  border: 0;
+  border-radius: 16rpx;
+  margin: 24rpx;
+  font-size: 30rpx;
+}
+
+.primary::after {
+  border: 0;
+}
+
+.ghost {
+  background: #ffffff;
+  color: #111111;
+  border: 1rpx solid #dddddd;
+  border-radius: 16rpx;
+  margin: 24rpx;
+  font-size: 30rpx;
+}
+
+.ghost::after {
+  border: 0;
+}
+
+.stage {
+  margin: 24rpx;
+  padding: 48rpx 32rpx;
+  border-radius: 24rpx;
+  color: #ffffff;
+}
+
+.stage .title {
+  color: #ffffff;
+}
+
+.stage .muted {
+  color: rgba(255, 255, 255, 0.9);
+  margin-top: 12rpx;
+}
+
+.stage-beginner {
+  background: #3b82f6;
+}
+
+.stage-intermediate {
+  background: #10b981;
+}
+
+.stage-advanced {
+  background: #f59e0b;
+}
+
+.stage-ultimate {
+  background: #ef4444;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.check {
+  color: #07c160;
+  font-size: 36rpx;
+  margin-left: 16rpx;
+}

@@ -1,0 +1,9 @@
+.url {
+  width: calc(100% - 48rpx);
+  margin: 0 24rpx;
+  padding: 20rpx;
+  background: #ffffff;
+  border: 1rpx solid #dddddd;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+}
