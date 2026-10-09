@@ -1,0 +1,27 @@
+<view class="body">
+  <video
+    id="episode"
+    class="player"
+    src="{{source}}"
+    title="{{title}}"
+    playback-rate="{{playbackRate}}"
+    object-fit="contain"
+    controls
+    show-center-play-btn
+    show-play-btn
+    show-background-playback-button="{{false}}"
+    enable-play-gesture
+  />
+  <view class="speeds">
+    <view
+      wx:for="{{rates}}"
+      wx:key="*this"
+      class="speed {{item === playbackRate ? 'on' : ''}}"
+      data-rate="{{item}}"
+      bindtap="setRate"
+    >
+      {{item}}x
+    </view>
+  </view>
+  <button class="ghost" bindtap="goBack">返回</button>
+</view>

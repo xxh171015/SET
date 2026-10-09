@@ -32,6 +32,25 @@ function memoryHttp(body) {
   };
 }
 
+function memoryVideo() {
+  let src = "";
+  let playbackRate = 1;
+  return {
+    async load(source) {
+      src = source;
+    },
+    async setPlaybackRate(rate) {
+      playbackRate = rate;
+    },
+    get src() {
+      return src;
+    },
+    get playbackRate() {
+      return playbackRate;
+    },
+  };
+}
+
 describe("Library", () => {
   it("empty Manifest URL shows empty Library with 去设置, not 刷新", async () => {
     const library = createLibrary({ storage: memoryStorage() });
@@ -487,5 +506,163 @@ describe("Library", () => {
     assert.equal(view.empty, true);
     assert.deepEqual(view.episodes, []);
     assert.equal(view.copy, "还没有看到一半的 Episode。");
+  });
+
+  it("opening an Episode plays that Episode's HTTPS Source", async () => {
+    const video = memoryVideo();
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      video,
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+
+    const view = await library.viewEpisode("yakka-dee-apple");
+
+    assert.equal(view.source, "https://cdn.example/yakka-dee-apple.mp4");
+    assert.equal(video.src, "https://cdn.example/yakka-dee-apple.mp4");
+  });
+
+  it("opening an Episode starts at 1x with rates 0.75 through 2", async () => {
+    const video = memoryVideo();
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      video,
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+
+    const view = await library.viewEpisode("yakka-dee-apple");
+
+    assert.equal(view.playbackRate, 1);
+    assert.deepEqual(view.rates, [0.75, 1, 1.25, 1.5, 2]);
+    assert.equal(video.playbackRate, 1);
+  });
+
+  it("Learner can set playback rate to 1.5", async () => {
+    const video = memoryVideo();
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      video,
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.viewEpisode("yakka-dee-apple");
+
+    const view = await library.setPlaybackRate(1.5);
+
+    assert.equal(view.playbackRate, 1.5);
+    assert.equal(video.playbackRate, 1.5);
+  });
+
+  it("playback rate is not persisted across a new Library", async () => {
+    const storage = memoryStorage();
+    const http = memoryHttp({
+      "yakka-dee": [
+        {
+          episodeId: "yakka-dee-apple",
+          title: "Apple",
+          sortKey: "001",
+          source: "https://cdn.example/yakka-dee-apple.mp4",
+        },
+      ],
+    });
+    const library = createLibrary({
+      storage,
+      http,
+      video: memoryVideo(),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.viewEpisode("yakka-dee-apple");
+    await library.setPlaybackRate(2);
+
+    const relaunched = createLibrary({
+      storage,
+      http,
+      video: memoryVideo(),
+    });
+    const view = await relaunched.viewEpisode("yakka-dee-apple");
+
+    assert.equal(view.playbackRate, 1);
+  });
+
+  it("keeps the current playback rate when the requested rate is not listed", async () => {
+    const video = memoryVideo();
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        "yakka-dee": [
+          {
+            episodeId: "yakka-dee-apple",
+            title: "Apple",
+            sortKey: "001",
+            source: "https://cdn.example/yakka-dee-apple.mp4",
+          },
+        ],
+      }),
+      video,
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+    await library.viewEpisode("yakka-dee-apple");
+    await library.setPlaybackRate(1.5);
+
+    const view = await library.setPlaybackRate(3);
+
+    assert.equal(view.playbackRate, 1.5);
+    assert.equal(video.playbackRate, 1.5);
+  });
+
+  it("player view uses the Episode title", async () => {
+    const library = createLibrary({
+      storage: memoryStorage(),
+      http: memoryHttp({
+        friends: [
+          {
+            episodeId: "friends-s01e01",
+            title: "The One Where Monica Gets a Roommate",
+            sortKey: "S01E01",
+            source: "https://cdn.example/friends-s01e01.mp4",
+          },
+        ],
+      }),
+    });
+    await library.saveManifestUrl("https://example.com/manifest.json");
+    await library.refresh();
+
+    const view = await library.viewEpisode("friends-s01e01");
+
+    assert.equal(view.title, "The One Where Monica Gets a Roommate");
   });
 });

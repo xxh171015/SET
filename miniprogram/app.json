@@ -4,7 +4,8 @@
     "pages/continue/index",
     "pages/settings/index",
     "pages/stage/index",
-    "pages/show/index"
+    "pages/show/index",
+    "pages/player/index"
   ],
   "window": {
     "backgroundTextStyle": "light",
